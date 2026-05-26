@@ -73,7 +73,7 @@ def main():
         log.info(f"  주문 #{order_number} NinjaVan 송장 등록 중...")
         try:
             nv_resp = ninjavan.create_order(order, cfg["sender"])
-            tracking_number = nv_resp.get("tracking_number", "")
+            tracking_number = nv_resp.get("tracking_number") or (nv_resp.get("data") or {}).get("tracking_number", "")
 
             if not tracking_number:
                 log.warning(f"  주문 #{order_number}: tracking_number 없음. 응답: {nv_resp}")

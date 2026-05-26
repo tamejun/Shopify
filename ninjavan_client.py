@@ -1,6 +1,8 @@
 import re
+import time
 import requests
 from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
 
 NINJAVAN_BASE_URL = "https://api.ninjavan.co/{country}"
 PICKUP_CUTOFF_HOUR = 14
@@ -13,9 +15,10 @@ class NinjaVanClient:
         self.client_id = client_id
         self.client_secret = client_secret
         self._token = None
+        self._token_expires_at = 0.0
 
     def _get_token(self) -> str:
-        if self._token:
+        if self._token and time.time() < self._token_expires_at:
             return self._token
         resp = requests.post(f"{self.base_url}/2.0/oauth/access_token", json={
             "client_id": self.client_id,
@@ -24,7 +27,9 @@ class NinjaVanClient:
         })
         if not resp.ok:
             raise NinjaVanError(f"NinjaVan 인증 실패 (HTTP {resp.status_code}): {resp.text}")
-        self._token = resp.json()["access_token"]
+        data = resp.json()
+        self._token = data["access_token"]
+        self._token_expires_at = time.time() + data.get("expires_in", 3600) - 60
         return self._token
 
     def _headers(self):
@@ -60,8 +65,8 @@ class NinjaVanClient:
         if missing:
             raise NinjaVanError(f"주문 #{order_number} 필수 정보 누락: {', '.join(missing)}")
 
-        pickup_date = pickup_date or _next_business_day()
-        delivery_date = _next_business_day(after=datetime.strptime(pickup_date, "%Y-%m-%d") + timedelta(days=1))
+        pickup_date = pickup_date or _next_business_day(country=self.country)
+        delivery_date = _next_business_day(after=datetime.strptime(pickup_date, "%Y-%m-%d") + timedelta(days=1), country=self.country)
 
         to_contact = {"name": to_name, "phone_number": _normalize_phone(to_phone, self.country), "address": _build_to_address(shipping_addr, self.country)}
         if customer.get("email"):
@@ -100,6 +105,11 @@ class NinjaVanClient:
                     return {"tracking_number": tracking, "already_registered": True}
             except Exception:
                 pass
+            existing = self.get_order(str(order_number))
+            if existing:
+                tracking = existing.get("tracking_number") or (existing.get("data") or {}).get("tracking_number", "")
+                if tracking:
+                    return {"tracking_number": tracking, "already_registered": True}
             raise NinjaVanError(f"주문 #{order_number}: 이미 NinjaVan에 등록된 주문번호입니다.")
 
         if not resp.ok:
@@ -194,9 +204,10 @@ def _build_items(items: list) -> list:
     return [{"item_description": (i.get("name") or "Item")[:255], "quantity": max(i.get("quantity") or 1, 1), "is_dangerous_good": False} for i in items]
 
 
-def _next_business_day(after=None) -> str:
+def _next_business_day(after=None, country: str = "SG") -> str:
     if after is None:
-        now = datetime.now()
+        tz = ZoneInfo(_country_timezone(country))
+        now = datetime.now(tz)
         base = now.date() if now.hour < PICKUP_CUTOFF_HOUR else (now + timedelta(days=1)).date()
     else:
         base = after.date() if hasattr(after, "date") else after

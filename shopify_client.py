@@ -79,7 +79,8 @@ class ShopifyClient:
         for attempt in range(4):
             resp = requests.request(method, url, headers=self.headers, **kwargs)
             if resp.status_code == 429:
-                time.sleep(float(resp.headers.get("Retry-After", 2 ** attempt)))
+                if attempt < 3:
+                    time.sleep(float(resp.headers.get("Retry-After", 2 ** attempt)))
                 continue
             if not resp.ok:
                 raise ShopifyError(f"Shopify API 오류 (HTTP {resp.status_code}): {resp.text}")
