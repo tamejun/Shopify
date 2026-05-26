@@ -1,5 +1,6 @@
 """
 오늘 Shopify 주문을 NinjaVan에 자동으로 송장 등록하는 스크립트.
+TikTok Events API 및 Google Analytics 4 구매 이벤트 전송 포함.
 
 사용법:
     pip install -r requirements.txt
@@ -14,6 +15,8 @@ from dotenv import load_dotenv
 
 from shopify_client import ShopifyClient, ShopifyError
 from ninjavan_client import NinjaVanClient, NinjaVanError
+from tiktok_client import TikTokClient, TikTokError
+from google_client import GoogleClient, GoogleError
 
 load_dotenv()
 
@@ -48,13 +51,68 @@ def load_config() -> dict:
             "state": os.environ["SENDER_STATE"],
             "postcode": os.getenv("SENDER_POSTCODE", ""),
         },
+        "tiktok": {
+            "access_token": os.getenv("TIKTOK_ACCESS_TOKEN", ""),
+            "pixel_id": os.getenv("TIKTOK_PIXEL_ID", ""),
+            "app_key": os.getenv("TIKTOK_SHOP_APP_KEY", ""),
+            "app_secret": os.getenv("TIKTOK_SHOP_APP_SECRET", ""),
+        },
+        "google": {
+            "ga4_measurement_id": os.getenv("GOOGLE_GA4_MEASUREMENT_ID", ""),
+            "ga4_api_secret": os.getenv("GOOGLE_GA4_API_SECRET", ""),
+            "merchant_id": os.getenv("GOOGLE_MERCHANT_ID", ""),
+            "service_account_json": os.getenv("GOOGLE_SERVICE_ACCOUNT_JSON", ""),
+        },
     }
+
+
+def _make_tiktok(cfg: dict) -> TikTokClient | None:
+    tt = cfg["tiktok"]
+    if tt["access_token"] and tt["pixel_id"]:
+        return TikTokClient(tt["access_token"], tt["pixel_id"], tt["app_key"] or None, tt["app_secret"] or None)
+    return None
+
+
+def _make_google(cfg: dict) -> GoogleClient | None:
+    g = cfg["google"]
+    if g["ga4_measurement_id"] and g["ga4_api_secret"]:
+        return GoogleClient(
+            ga4_measurement_id=g["ga4_measurement_id"],
+            ga4_api_secret=g["ga4_api_secret"],
+            merchant_id=g["merchant_id"] or None,
+            service_account_json=g["service_account_json"] or None,
+        )
+    return None
+
+
+def _send_tracking_events(order: dict, tracking_number: str, tiktok: TikTokClient | None, google: GoogleClient | None):
+    order_number = order.get("order_number")
+    if tiktok:
+        try:
+            tiktok.track_purchase(order, tracking_number)
+            log.info(f"  주문 #{order_number}: TikTok 이벤트 전송 완료")
+        except (TikTokError, Exception) as e:
+            log.warning(f"  주문 #{order_number}: TikTok 이벤트 전송 실패 (비필수) - {e}")
+
+    if google:
+        try:
+            google.track_purchase(order)
+            log.info(f"  주문 #{order_number}: GA4 이벤트 전송 완료")
+        except (GoogleError, Exception) as e:
+            log.warning(f"  주문 #{order_number}: GA4 이벤트 전송 실패 (비필수) - {e}")
 
 
 def main():
     cfg = load_config()
     shopify = ShopifyClient(cfg["shopify_store_url"], cfg["shopify_access_token"])
     ninjavan = NinjaVanClient(cfg["ninjavan_client_id"], cfg["ninjavan_client_secret"], cfg["ninjavan_country"])
+    tiktok = _make_tiktok(cfg)
+    google = _make_google(cfg)
+
+    if tiktok:
+        log.info("TikTok Events API 연동 활성화")
+    if google:
+        log.info("Google Analytics 4 연동 활성화")
 
     log.info("오늘 미처리 주문 조회 중...")
     orders = shopify.get_todays_orders_without_tracking()
@@ -82,6 +140,8 @@ def main():
 
             already = nv_resp.get("already_registered")
             log.info(f"  주문 #{order_number}: {'이미 등록됨(재사용)' if already else '등록 완료'} → {tracking_number}")
+
+            _send_tracking_events(order, tracking_number, tiktok, google)
 
             try:
                 shopify.update_fulfillment(order_id, tracking_number, ninjavan.get_tracking_url(tracking_number))
