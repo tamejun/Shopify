@@ -56,6 +56,7 @@ def load_config() -> dict:
             "pixel_id": os.getenv("TIKTOK_PIXEL_ID", ""),
             "app_key": os.getenv("TIKTOK_SHOP_APP_KEY", ""),
             "app_secret": os.getenv("TIKTOK_SHOP_APP_SECRET", ""),
+            "shop_cipher": os.getenv("TIKTOK_SHOP_CIPHER", ""),
         },
         "google": {
             "ga4_measurement_id": os.getenv("GOOGLE_GA4_MEASUREMENT_ID", ""),
@@ -69,7 +70,7 @@ def load_config() -> dict:
 def _make_tiktok(cfg: dict) -> TikTokClient | None:
     tt = cfg["tiktok"]
     if tt["access_token"] and tt["pixel_id"]:
-        return TikTokClient(tt["access_token"], tt["pixel_id"], tt["app_key"] or None, tt["app_secret"] or None)
+        return TikTokClient(tt["access_token"], tt["pixel_id"], tt["app_key"] or None, tt["app_secret"] or None, tt["shop_cipher"] or None)
     return None
 
 

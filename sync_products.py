@@ -49,7 +49,7 @@ def sync_to_tiktok(products: list[dict], cfg: dict):
         log.warning("TikTok Shop 자격증명 미설정 (TIKTOK_ACCESS_TOKEN, TIKTOK_SHOP_APP_KEY, TIKTOK_SHOP_APP_SECRET)")
         return
 
-    client = TikTokClient(tt["access_token"], tt.get("pixel_id", ""), tt["app_key"], tt["app_secret"])
+    client = TikTokClient(tt["access_token"], tt.get("pixel_id", ""), tt["app_key"], tt["app_secret"], tt.get("shop_cipher") or None)
     log.info(f"TikTok Shop 상품 동기화 시작 ({len(products)}개)...")
     results = client.sync_products_to_shop(products)
 
@@ -72,7 +72,7 @@ def sync_to_google(products: list[dict], cfg: dict):
         service_account_json=g["service_account_json"],
     )
     log.info(f"Google Merchant Center 상품 동기화 시작 ({len(products)}개)...")
-    results = client.sync_products(products)
+    results = client.sync_products(products, store_url=cfg["shopify_store_url"])
 
     ok = sum(1 for r in results if r["status"] == "ok")
     err = sum(1 for r in results if r["status"] == "error")
@@ -83,7 +83,6 @@ def sync_to_google(products: list[dict], cfg: dict):
 
 
 def generate_feed(products: list[dict], cfg: dict):
-    g = cfg["google"]
     store_url = cfg["shopify_store_url"]
     client = GoogleClient()
     feed_xml = client.generate_feed_xml(products, store_url)
@@ -119,6 +118,7 @@ def main():
             "pixel_id": os.getenv("TIKTOK_PIXEL_ID", ""),
             "app_key": os.getenv("TIKTOK_SHOP_APP_KEY", ""),
             "app_secret": os.getenv("TIKTOK_SHOP_APP_SECRET", ""),
+            "shop_cipher": os.getenv("TIKTOK_SHOP_CIPHER", ""),
         },
         "google": {
             "ga4_measurement_id": os.getenv("GOOGLE_GA4_MEASUREMENT_ID", ""),
