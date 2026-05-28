@@ -1,0 +1,6 @@
+__pycache__/
+*.pyc
+.env
+audit_report_*.html
+title_suggestions_*.csv
+google_shopping_feed.xml
