@@ -69,11 +69,41 @@ class ShopifyClient:
         resp = self._post(f"{self.base_url}/fulfillments/{target['id']}/update_tracking.json", payload)
         return resp.json()
 
+    def get_all_products(self) -> list[dict]:
+        products = []
+        url = f"{self.base_url}/products.json"
+        params = {"limit": 250, "status": "active"}
+        while url:
+            resp = self._get(url, params=params)
+            products.extend(resp.json().get("products", []))
+            link = resp.headers.get("Link", "")
+            url = None
+            params = None
+            if 'rel="next"' in link:
+                for part in link.split(","):
+                    if 'rel="next"' in part:
+                        url = part.split(";")[0].strip().strip("<>")
+                        break
+        return products
+
+    def update_product(self, product_id: int, fields: dict) -> dict:
+        payload = {"product": {"id": product_id, **fields}}
+        resp = self._put(f"{self.base_url}/products/{product_id}.json", payload)
+        return resp.json().get("product", {})
+
+    def update_image_alt(self, product_id: int, image_id: int, alt: str) -> dict:
+        payload = {"image": {"id": image_id, "alt": alt}}
+        resp = self._put(f"{self.base_url}/products/{product_id}/images/{image_id}.json", payload)
+        return resp.json().get("image", {})
+
     def _get(self, url, params=None):
         return self._request("GET", url, params=params)
 
     def _post(self, url, json):
         return self._request("POST", url, json=json)
+
+    def _put(self, url, json):
+        return self._request("PUT", url, json=json)
 
     def _request(self, method, url, **kwargs):
         for attempt in range(4):
